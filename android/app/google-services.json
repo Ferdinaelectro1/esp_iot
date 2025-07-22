@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1040452658777",
+    "firebase_url": "https://esptemperature-3ec83-default-rtdb.firebaseio.com",
+    "project_id": "esptemperature-3ec83",
+    "storage_bucket": "esptemperature-3ec83.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1040452658777:android:302a954ca55de34889f348",
+        "android_client_info": {
+          "package_name": "com.domain.esp_iot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCq5ePj9BM-mvkT-oCq9J4MBw7xy8BgF9A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
