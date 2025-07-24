@@ -1,18 +1,29 @@
 import 'dart:async';
-
-import 'package:esp_iot/home_page.dart';
-import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:esp_iot/home_page.dart';
+import 'package:esp_iot/provider/change_notifier_data.dart';
+import 'package:esp_iot/secret.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:provider/provider.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options:  DefaultFirebaseOptions.currentPlatform
   );
-  runApp(const MyApp());
+
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ChangeNotifierData(),
+      child: const MyApp(),
+    )
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -43,85 +54,88 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   late DatabaseReference _ref;
+  int count = 5;
   final SepareBox = SizedBox(height: 20,);
-  final _url = "http://192.168.0.32";
-
-  Map<String,dynamic> datas = {
-    "dht_temp": 0,
-    "soil_hum": 0,
-    "dht_hum": 0
-  };
+  final url = "https://api.openweathermap.org/data/2.5/weather?q=Cotonou&appid=$API_KEY&units=metric";
+  Timer? timer;
 
   @override
   void initState() {
-    _ref = FirebaseDatabase.instance.ref("mesures");
-    _ref.onValue.listen((DatabaseEvent event) {
-      final data = event.snapshot.value;
-      if(data != null && data is Map)
-      {
-        //print(data);
-        setState(() {
-          datas["dht_temp"] = data["dht_temp"];   
-          datas["soil_hum"] = data["soil_hum"];  
-          datas["dht_hum"] = data["dht_hum"];  
-        });
-      }
-    });
     super.initState();
-  } 
+    _ref = FirebaseDatabase.instance.ref("mesures");
+
+    if (kIsWeb) {
+      // Pour le Web, pas d'écoute temps réel => lecture toutes les 10s
+      getFirebaseData();
+
+      timer = Timer.periodic(Duration(seconds: 3), (_) => getFirebaseData());
+    } else {
+      // Pour mobile, on utilise l'écoute temps réel (onValue)
+      _ref.onValue.listen((event) {
+        final data = event.snapshot.value;
+        final provid = Provider.of<ChangeNotifierData>(context, listen: false);
+        if (data != null && data is Map) {
+          provid.espTemperature = (data["dht_temp"] as num).toDouble();
+          provid.espHumidity = (data["dht_hum"] as num).toDouble();
+          provid.espTerreHumidity = (data["soil_hum"] as num).toDouble();
+        }
+      });
+      timer = Timer.periodic(Duration(seconds: 10), (_) => updateMeteo());
+    }
+  }
+
+  void getFirebaseData() async {
+    final snapshot = await _ref.get();
+    final data = snapshot.value;
+    if (data != null && data is Map) {
+      final provid = Provider.of<ChangeNotifierData>(context, listen: false);
+      provid.espTemperature = (data["dht_temp"] as num).toDouble();
+      provid.espHumidity = (data["dht_hum"] as num).toDouble();
+      provid.espTerreHumidity = (data["soil_hum"] as num).toDouble();
+    }
+    //mettre à jour la météo reel après 5 mis à jour de firebase
+    if(count >= 5)
+    {
+      updateMeteo();
+      count = 0;
+    }
+    count ++;
+  }
+
 
   @override
   void dispose() {
+    timer?.cancel();
     super.dispose();
   }
 
-  Future<void> sendMessage (BuildContext context) async
+  void updateMeteo() async
   {
-    if(_url.isEmpty == false)
+    final provid = Provider.of<ChangeNotifierData>(context,listen: false);
+    final dio = Dio();
+
+    try
     {
-      final url = "$_url/data";
-      final dio = Dio();
-      try
+     Response response = await dio.get(url);
+     if(response.data is Map<String,dynamic> )
+     {
+      Map<String,dynamic> json1 = response.data;
+      Map<String,dynamic> json2 = json1["main"];
+      provid.reelTemperature = json2["temp"];
+      provid.reelHumidity = json2["humidity"];
+     }
+     //print(response.data);
+    }
+    on DioException catch(e)
+    {
+      if(mounted)
       {
-        final response = await dio.get(url);
-        if(response.statusCode == 200)
-        {
-          Map<String, dynamic> jsonData = response.data;
-        setState(() {
-          datas["dht_temp"] = jsonData["dht_temp"];
-          datas["soil_hum"] = jsonData["soil_hum"];
-          datas["dht_hum"] = jsonData["dht_hum"];
-        });
-       // print(response.toString());
-        }
-        else 
-        {
-          if(mounted)//vérifie si on est toujours dans le homepage avant d'afficher le message
-          {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text("Erreur 404"),
-              behavior: SnackBarBehavior.floating,
-              backgroundColor: Colors.red,
-            )
-          );
-          }
-        }
-      }
-      catch(e)
-      {
-        if(mounted)//vérifie si on est toujours dans le homepage avant d'afficher le message
-        {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text("Erreur lors de la communication avec le serveur"),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.red,
-          )
+          SnackBar(content: Text("erreur dio meteo : $e"),backgroundColor: Colors.red,)
         );
-        }
       }
     }
+
   }
 
   @override
